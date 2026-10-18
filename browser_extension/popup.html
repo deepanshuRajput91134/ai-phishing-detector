@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PhishGuard AI</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    body {
+      width: 360px;
+      padding: 16px;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 13px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+    .nav-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .nav-btn {
+      flex: 1;
+      padding: 6px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .nav-btn.active {
+      background: #0284c7;
+      color: #fff;
+      border-color: #38bdf8;
+    }
+    .form-group {
+      margin-bottom: 10px;
+    }
+    label {
+      display: block;
+      margin-bottom: 4px;
+      color: #cbd5e1;
+      font-weight: 500;
+    }
+    input, textarea {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #f8fafc;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #38bdf8;
+    }
+    .action-btn {
+      width: 100%;
+      padding: 9px;
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: background 0.2s;
+    }
+    .action-btn:hover {
+      background: #0369a1;
+    }
+    .status-box {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      display: none;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+    .badge-danger { background: #ef4444; color: #fff; }
+    .badge-warning { background: #f59e0b; color: #000; }
+    .badge-success { background: #10b981; color: #fff; }
+    .risk-score {
+      font-size: 20px;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .flag-list {
+      margin-top: 8px;
+      padding-left: 16px;
+      color: #fca5a5;
+      font-size: 11px;
+    }
+    .flag-list li { margin-bottom: 4px; }
+    .footer {
+      margin-top: 12px;
+      font-size: 11px;
+      text-align: center;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span>🛡️</span>
+    <h1>PhishGuard AI</h1>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="nav-btn active" id="tab-url-btn">URL Scanner</button>
+    <button class="nav-btn" id="tab-email-btn">Email Inspector</button>
+  </div>
+
+  <!-- URL PANEL -->
+  <div id="url-panel">
+    <div class="form-group">
+      <label for="url-input">Target URL:</label>
+      <input type="text" id="url-input" placeholder="https://example.com" />
+    </div>
+    <button class="action-btn" id="scan-url-btn">🔍 Scan URL</button>
+  </div>
+
+  <!-- EMAIL PANEL -->
+  <div id="email-panel" style="display: none;">
+    <div class="form-group">
+      <label for="email-subject">Subject:</label>
+      <input type="text" id="email-subject" placeholder="Urgent account alert..." />
+    </div>
+    <div class="form-group">
+      <label for="email-body">Body:</label>
+      <textarea id="email-body" rows="4" placeholder="Paste email content here..."></textarea>
+    </div>
+    <button class="action-btn" id="scan-email-btn">🔬 Scan Email</button>
+  </div>
+
+  <!-- RESULT DISPLAY -->
+  <div id="result-box" class="status-box">
+    <div id="result-badge" class="badge"></div>
+    <div id="result-score" class="risk-score"></div>
+    <div id="result-detail" style="color: #94a3b8; font-size: 12px;"></div>
+    <ul id="result-flags" class="flag-list"></ul>
+  </div>
+
+  <div class="footer">PhishGuard Engine v1.0 • Local AI</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
