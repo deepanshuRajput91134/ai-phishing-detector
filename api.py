@@ -3,17 +3,20 @@ import sys
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # Ensure src is in python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from predictor import PhishingDetector
 from xai_highlighter import highlight_email_threat_cues
+from quishing import analyze_quishing_threat
+from report_generator import generate_executive_html_report
 
 app = FastAPI(
     title="PhishGuard Enterprise AI Threat Intelligence API",
-    description="Dual-engine AI API for real-time URL Typosquatting, Email NLP, RFC 822 .eml Header Audits, and XAI Explanations",
-    version="2.0.0"
+    description="Dual-engine AI API for real-time URL Typosquatting, Email NLP, RFC 822 .eml Header Audits, Quishing Scanner, and Executive Reporting",
+    version="2.1.0"
 )
 
 # Enable CORS for browser extensions and external integrations
@@ -38,12 +41,21 @@ class EmailScanRequest(BaseModel):
     body: str = Field(..., example="Dear Customer, verify your credentials immediately within 24 hours: http://192.168.1.50/login.php")
 
 
+class ReportRequest(BaseModel):
+    incident_id: Optional[str] = None
+    target: str = Field(..., example="http://paypa1-security.xyz")
+    type: str = Field(..., example="URL Threat Scan")
+    risk_score: int = Field(..., example=95)
+    verdict: str = Field(..., example="PHISHING (High Risk)")
+    red_flags: list = Field(default_factory=list)
+
+
 @app.get("/")
 def root():
     return {
         "service": "PhishGuard Enterprise AI Threat Intelligence Engine",
         "status": "online",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "ready": detector.is_ready(),
         "documentation": "/docs"
     }
@@ -91,6 +103,27 @@ async def scan_eml_file(file: UploadFile = File(...)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse .eml file: {str(e)}")
+
+
+@app.post("/api/scan-qr")
+async def scan_qr_file(file: UploadFile = File(...)):
+    """Uploads and inspects QR code images for Quishing (QR Phishing) threat vectors."""
+    try:
+        content = await file.read()
+        result = analyze_quishing_threat(content, detector)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process QR image: {str(e)}")
+
+
+@app.post("/api/export-report", response_class=HTMLResponse)
+def export_report(req: ReportRequest):
+    """Generates an executive SOC incident report (HTML) for formal reporting and escalation."""
+    try:
+        html_report = generate_executive_html_report(req.dict())
+        return HTMLResponse(content=html_report, status_code=200)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/metrics")

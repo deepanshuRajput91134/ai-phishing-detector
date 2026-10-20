@@ -14,7 +14,7 @@ MONITORED_BRANDS = [
 ]
 
 COMMON_HOMOGLYPHS = {
-    '0': 'o', '1': 'l', 'i': 'l', 'vv': 'w', 'rn': 'm', '@': 'a', '$': 's'
+    '0': 'o', '1': 'l', 'vv': 'w', 'rn': 'm', '@': 'a', '$': 's'
 }
 
 

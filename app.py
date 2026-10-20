@@ -12,6 +12,8 @@ sys.path.insert(0, SRC_DIR)
 from predictor import PhishingDetector
 from train import train_all, train_url_model, train_email_model
 from xai_highlighter import highlight_email_threat_cues
+from quishing import analyze_quishing_threat
+from report_generator import generate_executive_html_report
 
 st.set_page_config(
     page_title="PhishGuard Enterprise AI",
@@ -80,10 +82,15 @@ st.markdown("""
         background-color: #FFF1F2;
         border: 1px solid #FDA4AF;
         color: #9F1239;
-        padding: 10px 14px;
+        padding: 12px 16px;
         border-radius: 8px;
         font-weight: 600;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
+    }
+    .threat-meter {
+        font-size: 2.4rem;
+        font-weight: 800;
+        margin-bottom: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -94,29 +101,35 @@ def load_detector():
 
 detector = load_detector()
 
-def record_incident(scan_type: str, target: str, score: int, verdict: str):
-    st.session_state.audit_history.append({
+def record_incident(scan_type: str, target: str, score: int, verdict: str, red_flags: list = None):
+    entry = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "type": scan_type,
-        "target": target[:60],
+        "target": target[:80],
         "risk_score": score,
-        "verdict": verdict
-    })
+        "verdict": verdict,
+        "red_flags": red_flags or []
+    }
+    st.session_state.audit_history.append(entry)
+    return entry
 
 # Sidebar
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/shield.png", width=64)
     st.title("PhishGuard Enterprise")
-    st.caption("AI-Powered Threat Defense Ecosystem v2.0")
+    st.caption("AI-Powered Threat Defense Ecosystem v2.1")
     st.markdown("---")
     st.markdown("""
-    **Active Defensive Layers:**
+    **Defensive Capabilities:**
     * 🌲 **Lexical URL Classifier:** Random Forest + DGA Entropy
-    * 🎯 **Brand Typosquatting Radar:** Homoglyphs & Combosquatting
+    * 🎯 **Brand Radar:** Homoglyphs & Combosquatting
     * 🧠 **NLP Email Analyzer:** TF-IDF + Social Engineering Signals
     * 📧 **RFC 822 Header Auditor:** SPF / DKIM / Domain Alignment
-    * ⚡ **FastAPI Engine:** [Swagger Docs (Port 8000)](http://localhost:8000/docs)
+    * 📷 **Quishing Engine:** QR Code Phishing Defense
+    * 📋 **SOC Playbook:** Automated Executive Incident Reports
+    * ⚡ **FastAPI Server:** [Swagger Docs (Port 8000)](http://localhost:8000/docs)
     * 🧩 **Chrome Extension:** `browser_extension/`
+    * 🐳 **Docker Support:** `docker compose up`
     """)
     st.markdown("---")
     if st.button("🔄 Retrain AI Models"):
@@ -128,14 +141,15 @@ with st.sidebar:
 
 # Header
 st.markdown('<div class="main-header">🛡️ PhishGuard AI Threat Intelligence Center</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Enterprise defense platform for detecting advanced phishing, brand impersonation, email spoofing, and malicious links.</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Enterprise defense platform for detecting brand typosquatting, email spoofing, malicious links, and quishing vectors.</div>', unsafe_allow_html=True)
 
 # Tabs
-tab_url, tab_email, tab_eml, tab_history, tab_dataset, tab_metrics = st.tabs([
+tab_url, tab_email, tab_eml, tab_qr, tab_history, tab_dataset, tab_metrics = st.tabs([
     "🔗 URL & Brand Radar",
     "✉️ Email Inspector (XAI)",
     "📧 Raw .EML Header Auditor",
-    "📋 Threat Audit History",
+    "📷 Quishing (QR Phishing)",
+    "📋 Threat Audit & Reports",
     "📁 Custom Dataset Importer",
     "📊 Model Performance"
 ])
@@ -168,7 +182,7 @@ with tab_url:
         else:
             with st.spinner("Extracting lexical signals and querying brand intelligence..."):
                 res = detector.predict_url(url_input)
-                record_incident("URL", url_input, res["risk_score"], res["verdict"])
+                record_incident("URL", url_input, res["risk_score"], res["verdict"], res.get("red_flags", []))
 
             score = res["risk_score"]
             c1, c2 = st.columns([1, 2])
@@ -186,8 +200,23 @@ with tab_url:
                 st.progress(score / 100)
                 st.caption(f"Estimated Malicious Probability: **{res['probability']*100:.1f}%**")
 
+                # One-click Executive Report Download
+                report_html = generate_executive_html_report({
+                    "target": url_input,
+                    "type": "URL & Brand Spoofing Scan",
+                    "risk_score": score,
+                    "verdict": res["verdict"],
+                    "red_flags": res.get("red_flags", [])
+                })
+                st.download_button(
+                    "📥 Download Executive Incident Report",
+                    data=report_html,
+                    file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                    key="dl_report_url"
+                )
+
             with c2:
-                # Brand Typosquatting alert banner
                 brand_info = res.get("brand_intelligence", {})
                 if brand_info.get("impersonated"):
                     st.markdown(f'''
@@ -242,7 +271,7 @@ with tab_email:
         else:
             with st.spinner("Analyzing linguistic patterns and behavioral cues..."):
                 res = detector.predict_email(subject_input, body_input)
-                record_incident("Email", subject_input or body_input[:40], res["risk_score"], res["verdict"])
+                record_incident("Email", subject_input or body_input[:40], res["risk_score"], res["verdict"], res.get("red_flags", []))
 
             score = res["risk_score"]
             c1, c2 = st.columns([1, 2])
@@ -259,6 +288,21 @@ with tab_email:
                 st.write("")
                 st.progress(score / 100)
                 st.caption(f"Confidence: **{res['probability']*100:.1f}%**")
+
+                report_html = generate_executive_html_report({
+                    "target": f"Subject: {subject_input}",
+                    "type": "Email Social Engineering Audit",
+                    "risk_score": score,
+                    "verdict": res["verdict"],
+                    "red_flags": res.get("red_flags", [])
+                })
+                st.download_button(
+                    "📥 Download Executive Incident Report",
+                    data=report_html,
+                    file_name=f"email_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                    key="dl_report_email"
+                )
 
             with c2:
                 st.markdown("##### Detected Psychological & Linguistic Triggers")
@@ -316,7 +360,7 @@ PayPal Security Team.
     if eml_to_scan and st.button("🛡️ Audit .EML File", type="primary"):
         with st.spinner("Parsing RFC 822 headers, verifying domain alignment, and inspecting payloads..."):
             eml_audit = detector.scan_eml(eml_to_scan)
-            record_incident(".EML", eml_audit["headers"]["subject"] or "EML File", eml_audit["composite_risk_score"], eml_audit["composite_verdict"])
+            record_incident(".EML", eml_audit["headers"]["subject"] or "EML File", eml_audit["composite_risk_score"], eml_audit["composite_verdict"], eml_audit.get("spoofing_flags", []))
 
         score = eml_audit["composite_risk_score"]
         col_eml1, col_eml2 = st.columns([1, 2])
@@ -331,6 +375,21 @@ PayPal Security Team.
                 st.markdown(f'<span class="badge-success">✅ {eml_audit["composite_verdict"]}</span>', unsafe_allow_html=True)
             st.write("")
             st.progress(score / 100)
+
+            report_html = generate_executive_html_report({
+                "target": eml_audit["headers"]["subject"],
+                "type": ".EML Raw Header & Attachment Audit",
+                "risk_score": score,
+                "verdict": eml_audit["composite_verdict"],
+                "red_flags": eml_audit.get("spoofing_flags", [])
+            })
+            st.download_button(
+                "📥 Download Executive Incident Report",
+                data=report_html,
+                file_name=f"eml_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                mime="text/html",
+                key="dl_report_eml"
+            )
 
         with col_eml2:
             st.markdown("##### Header Alignment & Authentication Status")
@@ -361,14 +420,64 @@ PayPal Security Team.
         highlighted = highlight_email_threat_cues(eml_audit.get("body_text", ""))
         st.markdown(f'<div class="xai-box">{highlighted}</div>', unsafe_allow_html=True)
 
-# ----------------- TAB 4: THREAT AUDIT HISTORY -----------------
+# ----------------- TAB 4: QUISHING (QR PHISHING) -----------------
+with tab_qr:
+    st.subheader("📷 Quishing (QR Code Phishing) Defense Scanner")
+    st.write("Detects QR codes embedded in email attachments, MFA-reset prompts, and invoices designed to evade email perimeter gateways.")
+
+    uploaded_qr = st.file_uploader("Upload Image Containing QR Code (PNG, JPG, WEBP):", type=["png", "jpg", "jpeg", "webp"])
+
+    sample_qr_url = st.text_input("Or simulate testing a QR payload directly:", value="http://paypa1-security-verification.xyz/login.php")
+
+    if uploaded_qr is not None:
+        if st.button("🔍 Scan Uploaded QR Image", type="primary"):
+            with st.spinner("Extracting QR barcode and evaluating destination threat..."):
+                qr_res = analyze_quishing_threat(uploaded_qr.read(), detector)
+                record_incident("Quishing", qr_res.get("extracted_url") or "QR Image", qr_res["risk_score"], qr_res["verdict"], qr_res.get("flags", []))
+
+            st.write("---")
+            q_col1, q_col2 = st.columns([1, 2])
+            with q_col1:
+                st.metric("Quishing Risk Score", f"{qr_res['risk_score']}/100")
+                if qr_res.get("severity") == "danger":
+                    st.markdown(f'<span class="badge-danger">🚨 {qr_res["verdict"]}</span>', unsafe_allow_html=True)
+                elif qr_res.get("severity") == "warning":
+                    st.markdown(f'<span class="badge-warning">⚠️ {qr_res["verdict"]}</span>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<span class="badge-success">✅ {qr_res["verdict"]}</span>', unsafe_allow_html=True)
+
+            with q_col2:
+                st.write(f"**Decoded URL Payload:** `{qr_res.get('extracted_url') or 'None'}`")
+                for f in qr_res.get("flags", []):
+                    st.markdown(f"- 🚩 {f}")
+
+    elif sample_qr_url:
+        if st.button("🧪 Simulate Quishing Vector Analysis", type="primary"):
+            u_analysis = detector.predict_url(sample_qr_url)
+            quish_score = min(100, u_analysis["risk_score"] + 15)
+            q_verdict = "MALICIOUS QUISHING (High Risk QR Phishing)" if quish_score >= 70 else "SUSPICIOUS QR CODE"
+            record_incident("Quishing Simulation", sample_qr_url, quish_score, q_verdict, u_analysis.get("red_flags", []))
+
+            st.write("---")
+            q_col1, q_col2 = st.columns([1, 2])
+            with q_col1:
+                st.metric("Simulated Quishing Score", f"{quish_score}/100")
+                badge_class = "badge-danger" if quish_score >= 70 else "badge-warning"
+                st.markdown(f'<span class="{badge_class}">🚨 {q_verdict}</span>', unsafe_allow_html=True)
+            with q_col2:
+                st.write(f"**Target URL Decoded from Simulated QR:** `{sample_qr_url}`")
+                st.markdown("- 🚩 **Image contains an embedded QR code (Quishing Vector: Designed to bypass text email filters)**")
+                for f in u_analysis.get("red_flags", []):
+                    st.markdown(f"- 🚩 {f}")
+
+# ----------------- TAB 5: THREAT AUDIT HISTORY & REPORTS -----------------
 with tab_history:
-    st.subheader("📋 Session Threat Audit History & Incident Log")
+    st.subheader("📋 Session Threat Audit History & SOC Playbooks")
     st.write("Track all scans performed during this analyst session. Export reports for Security Operations (SOC) escalation.")
 
     if st.session_state.audit_history:
         df_hist = pd.DataFrame(st.session_state.audit_history)
-        st.dataframe(df_hist, use_container_width=True)
+        st.dataframe(df_hist[["timestamp", "type", "target", "risk_score", "verdict"]], use_container_width=True)
 
         col_dl1, col_dl2 = st.columns(2)
         with col_dl1:
@@ -388,9 +497,9 @@ with tab_history:
                 mime="application/json"
             )
     else:
-        st.info("No scans recorded yet in this session. Scan URLs or Emails in the previous tabs to populate the incident log.")
+        st.info("No scans recorded yet in this session. Scan URLs, Emails, or QR codes to populate the incident log.")
 
-# ----------------- TAB 5: CUSTOM DATASET IMPORTER -----------------
+# ----------------- TAB 6: CUSTOM DATASET IMPORTER -----------------
 with tab_dataset:
     st.subheader("Connect Custom Dataset & Retrain")
     st.write("Upload custom CSV files from Kaggle, PhishTank, or your organization's threat feed to retrain the models.")
@@ -439,7 +548,7 @@ with tab_dataset:
             else:
                 st.error("Uploaded CSV must contain columns 'subject', 'body', and 'label'")
 
-# ----------------- TAB 6: MODEL PERFORMANCE -----------------
+# ----------------- TAB 7: MODEL PERFORMANCE -----------------
 with tab_metrics:
     st.subheader("Model Evaluation & Training Metrics")
     st.write("Trained classifiers performance evaluated on independent holdout test partitions.")
