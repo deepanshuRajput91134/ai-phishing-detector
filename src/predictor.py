@@ -15,6 +15,7 @@ from features import (
 )
 from domain_intel import analyze_brand_impersonation
 from eml_parser import parse_eml_file
+from live_threat_intel import get_live_threat_intelligence
 
 
 class PhishingDetector:
@@ -22,8 +23,8 @@ class PhishingDetector:
     Enterprise-Grade Unified Inference Engine for Phishing Detection.
     Features:
     - URL Structural Tree Classifier + Brand Typosquatting & Punycode Intelligence
+    - Live Network Threat Intel (SSL/TLS audit + ICANN RDAP Domain Age + VirusTotal)
     - NLP Social Engineering Linguistic Engine
-    - End-to-end Multi-layer Correlation
     - RFC 822 .eml Raw Email & Header Spoof Analyzer
     """
     def __init__(self, models_dir: Optional[str] = None):
@@ -46,8 +47,13 @@ class PhishingDetector:
     def is_ready(self) -> bool:
         return self.url_bundle is not None and self.email_bundle is not None
 
-    def predict_url(self, url: str) -> Dict[str, Any]:
-        """Analyzes a given URL with ML features + Brand Typosquatting Threat Intel."""
+    def predict_url(
+        self,
+        url: str,
+        enable_live_intel: bool = False,
+        vt_api_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Analyzes a given URL with ML features + Brand Typosquatting + Live Threat Intel."""
         if not self.url_bundle:
             self._load_models()
         if not self.url_bundle:
@@ -73,6 +79,18 @@ class PhishingDetector:
             prob_phish = min(1.0, prob_phish + (brand_intel["risk_bonus"] / 100.0))
             red_flags.insert(0, f"BRAND TARGETING: {brand_intel['description']}")
 
+        # Optional Live Network Intelligence (SSL + WHOIS + VirusTotal)
+        live_intel = None
+        if enable_live_intel:
+            try:
+                live_intel = get_live_threat_intelligence(url, vt_api_key=vt_api_key)
+                if live_intel.get("live_flags"):
+                    red_flags.extend(live_intel["live_flags"])
+                if live_intel.get("live_risk_bonus", 0) > 0:
+                    prob_phish = min(1.0, prob_phish + (live_intel["live_risk_bonus"] / 100.0))
+            except Exception:
+                pass
+
         risk_score = int(round(prob_phish * 100))
         prediction = int(risk_score >= 50)
 
@@ -95,6 +113,7 @@ class PhishingDetector:
             "severity": severity,
             "red_flags": red_flags,
             "brand_intelligence": brand_intel,
+            "live_threat_intel": live_intel,
             "features": features_dict,
         }
 
@@ -144,7 +163,7 @@ class PhishingDetector:
             "metadata_features": meta_dict
         }
 
-    def scan_full_email(self, subject: str, body: str) -> Dict[str, Any]:
+    def scan_full_email(self, subject: str, body: str, enable_live_intel: bool = False) -> Dict[str, Any]:
         """End-to-End multi-layer correlation between text cues & embedded hyperlinks."""
         email_result = self.predict_email(subject, body)
         
@@ -152,7 +171,7 @@ class PhishingDetector:
         url_results = []
         for u in extracted_urls:
             try:
-                url_results.append(self.predict_url(u))
+                url_results.append(self.predict_url(u, enable_live_intel=enable_live_intel))
             except Exception as e:
                 url_results.append({
                     "target": u,
@@ -187,7 +206,7 @@ class PhishingDetector:
             "composite_severity": composite_severity
         }
 
-    def scan_eml(self, eml_bytes: bytes) -> Dict[str, Any]:
+    def scan_eml(self, eml_bytes: bytes, enable_live_intel: bool = False) -> Dict[str, Any]:
         """
         Deep security audit of raw .eml RFC 822 file:
         - Domain spoofing (From vs Reply-To vs Return-Path)
@@ -199,21 +218,18 @@ class PhishingDetector:
         subj = parsed_eml["headers"]["subject"]
         body = parsed_eml["body_text"]
 
-        # Run composite scan on the extracted text & links
-        composite_scan = self.scan_full_email(subj, body)
+        composite_scan = self.scan_full_email(subj, body, enable_live_intel=enable_live_intel)
 
-        # Also add any links extracted from HTML <a> tags that weren't in plain text
         existing_urls = set(composite_scan["extracted_urls"])
         for h_link in parsed_eml["html_links"]:
             if h_link not in existing_urls:
                 try:
-                    u_eval = self.predict_url(h_link)
+                    u_eval = self.predict_url(h_link, enable_live_intel=enable_live_intel)
                     composite_scan["url_analysis"].append(u_eval)
                     composite_scan["extracted_urls"].append(h_link)
                 except Exception:
                     pass
 
-        # Factor in email spoofing and attachment penalties
         spoof_penalty = len(parsed_eml["spoofing_flags"]) * 20
         has_dangerous_att = any(a["is_dangerous"] for a in parsed_eml["attachments"])
         if has_dangerous_att:

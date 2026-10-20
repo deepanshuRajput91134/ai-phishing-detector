@@ -87,10 +87,12 @@ st.markdown("""
         font-weight: 600;
         margin-bottom: 14px;
     }
-    .threat-meter {
-        font-size: 2.4rem;
-        font-weight: 800;
-        margin-bottom: 4px;
+    .live-intel-box {
+        background-color: #F0FDF4;
+        border: 1px solid #BBF7D0;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-top: 12px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -117,12 +119,19 @@ def record_incident(scan_type: str, target: str, score: int, verdict: str, red_f
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/shield.png", width=64)
     st.title("PhishGuard Enterprise")
-    st.caption("AI-Powered Threat Defense Ecosystem v2.1")
+    st.caption("AI-Powered Threat Defense Ecosystem v2.2")
+    st.markdown("---")
+    
+    st.markdown("### 🌐 Live Threat Feeds")
+    vt_key = st.text_input("VirusTotal API Key (Optional):", type="password", placeholder="Paste VT v3 key...")
+    
     st.markdown("---")
     st.markdown("""
     **Defensive Capabilities:**
     * 🌲 **Lexical URL Classifier:** Random Forest + DGA Entropy
     * 🎯 **Brand Radar:** Homoglyphs & Combosquatting
+    * 📅 **WHOIS RDAP:** Live Domain Age (<30 days alert)
+    * 🔒 **SSL/TLS Inspector:** Issuance age & CA authenticity
     * 🧠 **NLP Email Analyzer:** TF-IDF + Social Engineering Signals
     * 📧 **RFC 822 Header Auditor:** SPF / DKIM / Domain Alignment
     * 📷 **Quishing Engine:** QR Code Phishing Defense
@@ -141,11 +150,11 @@ with st.sidebar:
 
 # Header
 st.markdown('<div class="main-header">🛡️ PhishGuard AI Threat Intelligence Center</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Enterprise defense platform for detecting brand typosquatting, email spoofing, malicious links, and quishing vectors.</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Enterprise defense platform with live WHOIS domain age lookups, SSL audits, brand radar, and email threat analytics.</div>', unsafe_allow_html=True)
 
 # Tabs
 tab_url, tab_email, tab_eml, tab_qr, tab_history, tab_dataset, tab_metrics = st.tabs([
-    "🔗 URL & Brand Radar",
+    "🔗 URL, Brand & Live Intel",
     "✉️ Email Inspector (XAI)",
     "📧 Raw .EML Header Auditor",
     "📷 Quishing (QR Phishing)",
@@ -154,10 +163,10 @@ tab_url, tab_email, tab_eml, tab_qr, tab_history, tab_dataset, tab_metrics = st.
     "📊 Model Performance"
 ])
 
-# ----------------- TAB 1: URL & BRAND RADAR -----------------
+# ----------------- TAB 1: URL, BRAND & LIVE INTEL -----------------
 with tab_url:
-    st.subheader("Analyze Suspicious URLs & Brand Impersonation")
-    st.write("Detects domain structure anomalies, Shannon entropy, homoglyphs, and brand typosquatting targeting 50+ monitored institutions.")
+    st.subheader("Analyze Suspicious URLs, Brand Impersonation & Live Network Feeds")
+    st.write("Detects structural anomalies, brand typosquatting, freshly registered domains (ICANN RDAP), and SSL certificate posture.")
 
     col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
     sample_url = ""
@@ -175,13 +184,14 @@ with tab_url:
             sample_url = "http://apple.com.secure.account.verify.auth-portal-992.top/sign-in"
 
     url_input = st.text_input("Enter URL to scan:", value=sample_url, placeholder="e.g. http://paypal-verify-account.xyz")
+    enable_live = st.checkbox("🌐 Perform Live Network Intelligence (WHOIS Domain Age + SSL/TLS Audit + VirusTotal)", value=True)
 
     if st.button("🔍 Scan URL", type="primary", key="btn_scan_url") or url_input:
         if not url_input.strip():
             st.info("Please enter a URL to scan.")
         else:
-            with st.spinner("Extracting lexical signals and querying brand intelligence..."):
-                res = detector.predict_url(url_input)
+            with st.spinner("Executing lexical machine learning & querying live threat intelligence..."):
+                res = detector.predict_url(url_input, enable_live_intel=enable_live, vt_api_key=vt_key)
                 record_incident("URL", url_input, res["risk_score"], res["verdict"], res.get("red_flags", []))
 
             score = res["risk_score"]
@@ -200,7 +210,6 @@ with tab_url:
                 st.progress(score / 100)
                 st.caption(f"Estimated Malicious Probability: **{res['probability']*100:.1f}%**")
 
-                # One-click Executive Report Download
                 report_html = generate_executive_html_report({
                     "target": url_input,
                     "type": "URL & Brand Spoofing Scan",
@@ -234,6 +243,37 @@ with tab_url:
                         st.markdown(f"- 🚩 **{rf}**")
                 else:
                     st.markdown("🟢 *No high-risk structural heuristics or blacklisted patterns triggered.*")
+
+            # Live Network Intelligence Results Card
+            live_intel = res.get("live_threat_intel")
+            if live_intel:
+                st.markdown("---")
+                st.markdown("##### 🌐 Live Network & WHOIS Intelligence")
+                l_col1, l_col2, l_col3 = st.columns(3)
+                whois_data = live_intel.get("whois_rdap", {})
+                ssl_data = live_intel.get("ssl_audit", {})
+                vt_data = live_intel.get("virustotal", {})
+
+                with l_col1:
+                    age_days = whois_data.get("domain_age_days")
+                    age_text = f"{age_days} days old" if age_days is not None else "Not Available"
+                    reg = whois_data.get("registrar", "Unknown")
+                    st.metric("Domain Age", age_text, delta="- Newly Registered" if whois_data.get("is_newly_registered") else "Established")
+                    st.caption(f"Registrar: {reg}")
+
+                with l_col2:
+                    ssl_status = ssl_data.get("issuer", "No SSL")
+                    cert_age = f"{ssl_data.get('days_since_issued')}d old" if ssl_data.get('days_since_issued') is not None else "N/A"
+                    st.metric("SSL Certificate", cert_age)
+                    st.caption(f"Issuer: {ssl_status}")
+
+                with l_col3:
+                    if vt_data.get("configured"):
+                        vt_val = f"{vt_data.get('malicious_count')}/{vt_data.get('total_engines')}"
+                        st.metric("VirusTotal Score", vt_val, delta="Malicious" if vt_data.get('malicious_count', 0) > 0 else "Clean")
+                    else:
+                        st.metric("VirusTotal Engine", "Standby")
+                        st.caption("Add API key in sidebar to enable")
 
             st.markdown("---")
             st.markdown("##### Extracted Lexical & Domain Signals")
@@ -359,7 +399,7 @@ PayPal Security Team.
 
     if eml_to_scan and st.button("🛡️ Audit .EML File", type="primary"):
         with st.spinner("Parsing RFC 822 headers, verifying domain alignment, and inspecting payloads..."):
-            eml_audit = detector.scan_eml(eml_to_scan)
+            eml_audit = detector.scan_eml(eml_to_scan, enable_live_intel=True)
             record_incident(".EML", eml_audit["headers"]["subject"] or "EML File", eml_audit["composite_risk_score"], eml_audit["composite_verdict"], eml_audit.get("spoofing_flags", []))
 
         score = eml_audit["composite_risk_score"]
@@ -426,7 +466,6 @@ with tab_qr:
     st.write("Detects QR codes embedded in email attachments, MFA-reset prompts, and invoices designed to evade email perimeter gateways.")
 
     uploaded_qr = st.file_uploader("Upload Image Containing QR Code (PNG, JPG, WEBP):", type=["png", "jpg", "jpeg", "webp"])
-
     sample_qr_url = st.text_input("Or simulate testing a QR payload directly:", value="http://paypa1-security-verification.xyz/login.php")
 
     if uploaded_qr is not None:
@@ -453,7 +492,7 @@ with tab_qr:
 
     elif sample_qr_url:
         if st.button("🧪 Simulate Quishing Vector Analysis", type="primary"):
-            u_analysis = detector.predict_url(sample_qr_url)
+            u_analysis = detector.predict_url(sample_qr_url, enable_live_intel=True)
             quish_score = min(100, u_analysis["risk_score"] + 15)
             q_verdict = "MALICIOUS QUISHING (High Risk QR Phishing)" if quish_score >= 70 else "SUSPICIOUS QR CODE"
             record_incident("Quishing Simulation", sample_qr_url, quish_score, q_verdict, u_analysis.get("red_flags", []))

@@ -12,11 +12,12 @@ from predictor import PhishingDetector
 from xai_highlighter import highlight_email_threat_cues
 from quishing import analyze_quishing_threat
 from report_generator import generate_executive_html_report
+from live_threat_intel import fetch_domain_whois_rdap, audit_ssl_certificate, query_virustotal_reputation
 
 app = FastAPI(
     title="PhishGuard Enterprise AI Threat Intelligence API",
-    description="Dual-engine AI API for real-time URL Typosquatting, Email NLP, RFC 822 .eml Header Audits, Quishing Scanner, and Executive Reporting",
-    version="2.1.0"
+    description="Dual-engine AI API for real-time URL Typosquatting, Live WHOIS Domain Age, SSL/TLS Audits, Quishing Scanner, and Executive Reporting",
+    version="2.2.0"
 )
 
 # Enable CORS for browser extensions and external integrations
@@ -34,11 +35,14 @@ detector = PhishingDetector()
 
 class URLScanRequest(BaseModel):
     url: str = Field(..., example="http://paypal-security-alert.xyz/verify_credentials.html")
+    enable_live_intel: bool = Field(default=False, description="Query live WHOIS RDAP domain age & SSL certificate posture")
+    vt_api_key: Optional[str] = Field(default=None, description="Optional VirusTotal v3 API key")
 
 
 class EmailScanRequest(BaseModel):
     subject: str = Field(..., example="URGENT: Immediate Account Suspension")
     body: str = Field(..., example="Dear Customer, verify your credentials immediately within 24 hours: http://192.168.1.50/login.php")
+    enable_live_intel: bool = Field(default=False)
 
 
 class ReportRequest(BaseModel):
@@ -55,8 +59,9 @@ def root():
     return {
         "service": "PhishGuard Enterprise AI Threat Intelligence Engine",
         "status": "online",
-        "version": "2.1.0",
+        "version": "2.2.0",
         "ready": detector.is_ready(),
+        "live_intel_supported": True,
         "documentation": "/docs"
     }
 
@@ -66,7 +71,7 @@ def scan_url(req: URLScanRequest):
     if not req.url or not req.url.strip():
         raise HTTPException(status_code=400, detail="URL cannot be empty")
     try:
-        result = detector.predict_url(req.url.strip())
+        result = detector.predict_url(req.url.strip(), enable_live_intel=req.enable_live_intel, vt_api_key=req.vt_api_key)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -86,7 +91,7 @@ def scan_email(req: EmailScanRequest):
 def deep_scan(req: EmailScanRequest):
     """Correlates email text with all embedded URLs for comprehensive assessment."""
     try:
-        result = detector.scan_full_email(req.subject, req.body)
+        result = detector.scan_full_email(req.subject, req.body, enable_live_intel=req.enable_live_intel)
         result["xai_highlighted_html"] = highlight_email_threat_cues(f"{req.subject}\n\n{req.body}")
         return result
     except Exception as e:
@@ -94,11 +99,11 @@ def deep_scan(req: EmailScanRequest):
 
 
 @app.post("/api/scan-eml")
-async def scan_eml_file(file: UploadFile = File(...)):
+async def scan_eml_file(file: UploadFile = File(...), enable_live_intel: bool = False):
     """Uploads and analyzes raw RFC 822 (.eml) email file with header spoof & attachment inspection."""
     try:
         content = await file.read()
-        result = detector.scan_eml(content)
+        result = detector.scan_eml(content, enable_live_intel=enable_live_intel)
         result["xai_highlighted_html"] = highlight_email_threat_cues(result.get("body_text", ""))
         return result
     except Exception as e:
@@ -114,6 +119,22 @@ async def scan_qr_file(file: UploadFile = File(...)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process QR image: {str(e)}")
+
+
+@app.get("/api/threat-intel/domain-age")
+def get_domain_age(domain: str):
+    """Fetches registration date & domain age in days via ICANN RDAP."""
+    if not domain:
+        raise HTTPException(status_code=400, detail="Domain cannot be empty")
+    return fetch_domain_whois_rdap(domain)
+
+
+@app.get("/api/threat-intel/ssl-audit")
+def get_ssl_audit(host: str):
+    """Audits SSL/TLS certificate issuer, validity days, and self-signed status."""
+    if not host:
+        raise HTTPException(status_code=400, detail="Host cannot be empty")
+    return audit_ssl_certificate(host)
 
 
 @app.post("/api/export-report", response_class=HTMLResponse)
